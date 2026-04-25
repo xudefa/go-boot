@@ -7,6 +7,68 @@ import (
 	"sync"
 )
 
+// StructMetadata 结构体的预计算元数据
+type StructMetadata struct {
+	fieldCount int
+	fields     []StructFieldMeta
+}
+
+type StructFieldMeta struct {
+	Name   string
+	Tag    string
+	Offset uintptr
+	Type   reflect.Type
+}
+
+var (
+	structMetaCache = make(map[reflect.Type]*StructMetadata)
+	structMetaLock  sync.RWMutex
+)
+
+func getStructMetadata(t reflect.Type) *StructMetadata {
+	structMetaLock.RLock()
+	meta, ok := structMetaCache[t]
+	structMetaLock.RUnlock()
+	if ok {
+		return meta
+	}
+
+	structMetaLock.Lock()
+	defer structMetaLock.Unlock()
+
+	if meta, ok := structMetaCache[t]; ok {
+		return meta
+	}
+
+	meta = computeStructMetadata(t)
+	structMetaCache[t] = meta
+	return meta
+}
+
+func computeStructMetadata(t reflect.Type) *StructMetadata {
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+
+	count := t.NumField()
+	fields := make([]StructFieldMeta, count)
+
+	for i := 0; i < count; i++ {
+		f := t.Field(i)
+		fields[i] = StructFieldMeta{
+			Name:   f.Name,
+			Tag:    f.Tag.Get("inject"),
+			Offset: f.Offset,
+			Type:   f.Type,
+		}
+	}
+
+	return &StructMetadata{
+		fieldCount: count,
+		fields:     fields,
+	}
+}
+
 var (
 	ErrDuplicateBean = errors.New("duplicate bean registration")
 	ErrBeanNotFound  = errors.New("bean not found")
@@ -36,15 +98,25 @@ const (
 //   - Fields: 字段注入列表
 //   - Init: 初始化函数
 //   - DependsOn: 依赖的bean ID列表
+//   - Condition: 条件创建函数,返回true时才创建bean
 type BeanDefinition struct {
-	Instance         interface{}
-	OriginalInstance interface{}
+	Instance         any
+	OriginalInstance any
 	ConcreteType     reflect.Type
 	Scope            BeanScope
-	Factory          func(Container) (interface{}, error)
+	Factory          func(Container) (any, error)
 	Fields           []FieldInjection
-	Init             func(interface{}) error
+	Init             func(any) error
 	DependsOn        []string
+	Condition        func(Container) bool
+	PostProcessors   []BeanPostProcessor
+}
+
+// BeanPostProcessor bean后置处理器接口
+//
+// 在bean初始化之后调用,允许对bean进行修改或包装
+type BeanPostProcessor interface {
+	PostProcess(bean any, beanID string) (any, error)
 }
 
 // FieldInjection 定义字段注入配置
@@ -55,12 +127,13 @@ type BeanDefinition struct {
 //   - IsRef: 是否为引用(true表示Value是bean ID)
 type FieldInjection struct {
 	Name  string
-	Value interface{}
+	Value any
 	IsRef bool
 }
 
 type beanRegistry struct {
 	definitions map[string]*BeanDefinition
+	typeToID    map[reflect.Type]string
 	lock        sync.RWMutex
 }
 
@@ -148,7 +221,7 @@ type Container interface {
 	//
 	//	var h Handler
 	//	container.Inject(&h)
-	Inject(target interface{}) error
+	Inject(target any) error
 
 	// Get 根据beanID获取bean实例
 	//
@@ -157,7 +230,7 @@ type Container interface {
 	//   - opts: 可选参数,如core.WithAnonymous()
 	//
 	// 返回值:
-	//   - interface{}: bean实例
+	//   - any: bean实例
 	//   - error: 获取失败时返回错误,可能为ErrBeanNotFound或ErrCircularDep
 	//
 	// 注意:
@@ -172,7 +245,7 @@ type Container interface {
 	//	    log.Fatal(err)
 	//	}
 	//	svc.(*MyService).DoSomething()
-	Get(beanID string, opts ...GetOption) (interface{}, error)
+	Get(beanID string, opts ...GetOption) (any, error)
 
 	// GetAll 获取指定接口类型的所有实现bean
 	//
@@ -180,7 +253,7 @@ type Container interface {
 	//   - beanType: 接口类型
 	//
 	// 返回值:
-	//   - []interface{}: 所有实现该接口的bean实例数组
+	//   - []any: 所有实现该接口的bean实例数组
 	//   - error: 获取失败时返回错误
 	//
 	// 注意:
@@ -194,7 +267,7 @@ type Container interface {
 	//	for _, p := range plugins {
 	//	    p.(Plugin).Init()
 	//	}
-	GetAll(beanType interface{}) ([]interface{}, error)
+	GetAll(beanType any) ([]any, error)
 
 	// Invoke 自动调用函数并注入依赖
 	//
@@ -203,7 +276,7 @@ type Container interface {
 	//   - opts: 可选参数(预留)
 	//
 	// 返回值:
-	//   - []interface{}: 函数的返回值数组
+	//   - []any: 函数的返回值数组
 	//   - error: 调用失败时返回错误
 	//
 	// 注意:
@@ -217,7 +290,7 @@ type Container interface {
 	//	result, err := container.Invoke(func(s *UserService, l Logger) error {
 	//	    return s.DoSomething(l)
 	//	})
-	Invoke(fn interface{}, opts ...InvokeOption) ([]interface{}, error)
+	Invoke(fn any, opts ...InvokeOption) ([]any, error)
 
 	// Has 检查容器中是否存在指定ID的bean
 	//
@@ -310,6 +383,7 @@ func New(opts ...Option) Container {
 	return &container{
 		registry: beanRegistry{
 			definitions: make(map[string]*BeanDefinition),
+			typeToID:    make(map[reflect.Type]string),
 		},
 		config:   cfg,
 		creating: make(map[string]bool),
@@ -387,6 +461,9 @@ func (c *container) Register(beanID string, builders ...BuilderOption) error {
 	}
 
 	c.registry.definitions[beanID] = def
+	if def.ConcreteType != nil {
+		c.registry.typeToID[def.ConcreteType] = beanID
+	}
 	return nil
 }
 
@@ -405,6 +482,10 @@ func (c *container) Get(beanID string, opts ...GetOption) (interface{}, error) {
 			return c.parent.Get(beanID)
 		}
 		return nil, fmt.Errorf("%w: %s", ErrBeanNotFound, beanID)
+	}
+
+	if def.Condition != nil && !def.Condition(c) {
+		return nil, fmt.Errorf("%w: %s (condition not met)", ErrBeanNotFound, beanID)
 	}
 
 	if def.Scope == SingletonScope {
@@ -456,6 +537,13 @@ func (c *container) createInstance(def *BeanDefinition) (interface{}, error) {
 
 	if def.Init != nil {
 		if err := def.Init(instance); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, processor := range def.PostProcessors {
+		instance, err = processor.PostProcess(instance, "")
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -629,6 +717,9 @@ func (c *container) Inject(target interface{}) error {
 
 func (c *container) GetAll(beanType interface{}) ([]interface{}, error) {
 	t := reflect.TypeOf(beanType)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
 	if t.Kind() != reflect.Interface {
 		return nil, errors.New("GetAll requires interface{} type")
 	}
@@ -637,12 +728,12 @@ func (c *container) GetAll(beanType interface{}) ([]interface{}, error) {
 	defer c.registry.lock.RUnlock()
 
 	var results []interface{}
-	for _, def := range c.registry.definitions {
+	for id, def := range c.registry.definitions {
 		if def.ConcreteType == nil {
 			continue
 		}
 		if def.ConcreteType.Implements(t) || implementsInterface(def.ConcreteType, t) {
-			instance, err := c.Get(def.Instance.(interface{ GetBeanID() string }).GetBeanID())
+			instance, err := c.Get(id)
 			if err != nil {
 				continue
 			}
@@ -679,14 +770,26 @@ func (c *container) Invoke(fn interface{}, opts ...InvokeOption) ([]interface{},
 	for _, argType := range argTypes {
 		found := false
 		for _, def := range c.registry.definitions {
-			if def.ConcreteType != nil && def.ConcreteType.Implements(argType) {
-				instance, err := c.Get(c.getBeanIDByType(def.ConcreteType))
-				if err != nil {
-					continue
+			if def.ConcreteType != nil {
+				if argType.Kind() == reflect.Interface {
+					if def.ConcreteType.Implements(argType) {
+						instance, err := c.Get(c.getBeanIDByType(def.ConcreteType))
+						if err != nil {
+							continue
+						}
+						args = append(args, reflect.ValueOf(instance))
+						found = true
+						break
+					}
+				} else if def.ConcreteType == argType {
+					instance, err := c.Get(c.getBeanIDByType(def.ConcreteType))
+					if err != nil {
+						continue
+					}
+					args = append(args, reflect.ValueOf(instance))
+					found = true
+					break
 				}
-				args = append(args, reflect.ValueOf(instance))
-				found = true
-				break
 			}
 		}
 		if !found {
@@ -705,13 +808,9 @@ func (c *container) Invoke(fn interface{}, opts ...InvokeOption) ([]interface{},
 }
 
 func (c *container) getBeanIDByType(t reflect.Type) string {
-	c.registry.lock.RLock()
-	defer c.registry.lock.RUnlock()
-
-	for id, def := range c.registry.definitions {
-		if def.ConcreteType == t {
-			return id
-		}
+	id, ok := c.registry.typeToID[t]
+	if ok {
+		return id
 	}
 	return ""
 }

@@ -11,3 +11,6 @@
 .DS_Store
 .git/
 tmp/
+vendor/
+go.work
+go.work.sum
