@@ -1,0 +1,201 @@
+{
+  "app": {
+    "name": "go-boot-app",
+    "version": "1.0.0",
+    "description": "Go-Boot Application"
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "mode": "release"
+  },
+  "viper": {
+    "enabled": true,
+    "config-name": "application",
+    "config-type": "json",
+    "config-paths": "./,./config",
+    "env-prefix": "GO_BOOT"
+  },
+  "gin": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 8080,
+    "mode": "release",
+    "read-timeout": 60,
+    "write-timeout": 60,
+    "idle-timeout": 120
+  },
+  "hertz": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 8080,
+    "read-timeout": 60,
+    "write-timeout": 60,
+    "idle-timeout": 120
+  },
+  "fasthttp": {
+    "enabled": false,
+    "base-url": "",
+    "timeout": 30,
+    "read-timeout": 10,
+    "write-timeout": 10,
+    "max-conns-per-host": 256
+  },
+  "redis": {
+    "enabled": false,
+    "address": "localhost:6379",
+    "username": "",
+    "password": "",
+    "db": 0,
+    "pool-size": 10,
+    "max-active-connections": 100,
+    "min-idle-connections": 5,
+    "use-cluster": false
+  },
+  "gorm": {
+    "enabled": false,
+    "host": "localhost",
+    "port": 3306,
+    "username": "root",
+    "password": "",
+    "database": "test",
+    "charset": "utf8mb4",
+    "max-open-conns": 100,
+    "max-idle-conns": 10,
+    "conn-max-lifetime": 3600
+  },
+  "xorm": {
+    "enabled": false,
+    "type": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "username": "gate",
+    "password": "123456",
+    "database": "gate",
+    "charset": "utf8mb4",
+    "max-open-conns": 100,
+    "max-idle-conns": 10,
+    "show-sql": false
+  },
+  "jwt": {
+    "enabled": false,
+    "secret-key": "your-secret-key-here",
+    "issuer": "go-boot",
+    "expires-duration": 3600,
+    "refresh-expires-duration": 86400
+  },
+  "security": {
+    "enabled": false,
+    "rules": [],
+    "login-url": "/login",
+    "cors": {
+      "enabled": true,
+      "allowed-origins": "*",
+      "allowed-methods": "GET,POST,PUT,DELETE,OPTIONS",
+      "allowed-headers": "*",
+      "exposed-headers": "",
+      "max-age": 3600,
+      "allow-credentials": true
+    },
+    "rate-limit": {
+      "enabled": false,
+      "exclude-paths": [],
+      "rate": 100,
+      "burst": 10
+    }
+  },
+  "actuator": {
+    "enabled": true,
+    "endpoints": {
+      "health": {
+        "enabled": true,
+        "show-details": "when-authorized"
+      },
+      "info": {
+        "enabled": true
+      },
+      "metrics": {
+        "enabled": true
+      }
+    }
+  },
+  "metrics": {
+    "enabled": true,
+    "path": "/metrics",
+    "port": 9090
+  },
+  "tracing": {
+    "enabled": false,
+    "provider": "opentelemetry",
+    "service": {
+      "name": "go-boot-app",
+      "version": "1.0.0"
+    },
+    "exporter": {
+      "type": "otlpgrpc",
+      "endpoint": "localhost:4317",
+      "insecure": true,
+      "batch": {
+        "timeout": 5000,
+        "max-size": 512
+      }
+    },
+    "sampling": 1.0,
+    "environment": "production",
+    "resource": {
+      "attributes": ""
+    }
+  },
+  "schedule": {
+    "enabled": false,
+    "pool-size": 10
+  },
+  "kitex": {
+    "server": {
+      "enabled": false,
+      "address": ""
+    },
+    "client": {
+      "address": "",
+      "timeout": 5
+    }
+  },
+  "grpc": {
+    "server": {
+      "enabled": false,
+      "address": ""
+    },
+    "client": {
+      "address": "",
+      "timeout": 5
+    }
+  },
+  "casbin": {
+    "enabled": false,
+    "model": "",
+    "adapter": "",
+    "db-adapter": false,
+    "db-table": "casbin_rule"
+  },
+  "email": {
+    "enabled": false,
+    "smtp": "smtp.163.com",
+    "port": 25,
+    "username": "",
+    "password": ""
+  },
+  "zap": {
+    "enabled": false,
+    "caller-skip": 1,
+    "add-caller": false
+  },
+  "zerolog": {
+    "enabled": false
+  },
+  "nacos": {
+    "enabled": false
+  },
+  "etcd": {
+    "enabled": false
+  }
+}

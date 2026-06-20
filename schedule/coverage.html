@@ -1,0 +1,1401 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>schedule: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/xudefa/go-boot/schedule/annotation.go (73.1%)</option>
+				
+				<option value="file1">github.com/xudefa/go-boot/schedule/autoconfig.go (71.4%)</option>
+				
+				<option value="file2">github.com/xudefa/go-boot/schedule/cron.go (92.8%)</option>
+				
+				<option value="file3">github.com/xudefa/go-boot/schedule/scheduler.go (91.1%)</option>
+				
+				<option value="file4">github.com/xudefa/go-boot/schedule/task.go (100.0%)</option>
+				
+				<option value="file5">github.com/xudefa/go-boot/schedule/test_helper.go (51.7%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">// Package schedule 提供定时任务调度框架，包含 Cron 表达式解析、任务注册和调度执行。
+//
+// 核心组件：
+//   - Scheduler: 定时任务调度器，基于最小堆实现，支持动态注册/注销
+//   - CronExpression: 6字段 Spring 风格 Cron 表达式解析器
+//   - Task: 定时任务接口，包含名称、Cron 表达式和执行逻辑
+//   - @Scheduled 注解扫描：通过 AST 解析源码中的注解自动注册任务
+//
+// 使用示例：
+//
+//        scheduler := schedule.NewScheduler(schedule.WithPoolSize(5))
+//        scheduler.Register(schedule.NewTask("cleanup", "0 */5 * * * ?", func(ctx context.Context) error {
+//            return nil
+//        }))
+//        scheduler.Start(ctx)
+package schedule
+
+import (
+        "context"
+        "fmt"
+        "go/ast"
+        "go/parser"
+        "go/token"
+        "io/fs"
+        "path/filepath"
+        "reflect"
+        "strings"
+
+        "github.com/xudefa/go-boot/core"
+)
+
+// annotationInfo 保存从 Go 源码 AST 中解析出的 @Scheduled 注解信息
+// 包含所属结构体名称、方法名称和 Cron 表达式
+type annotationInfo struct {
+        structName string
+        methodName string
+        cronExpr   string
+}
+
+// ScanScheduledTasks 扫描容器中所有 bean 的 @Scheduled 注解方法，返回 Task 列表
+//
+// 在 bean 方法上使用注解：
+//
+//        // @Scheduled(cron="0/5 * * * * ?")
+//        func (s *MyService) Cleanup(ctx context.Context) error {
+//            return nil
+//        }
+//
+// scanDir 参数指定要扫描的源码目录。
+// 扫描过程：遍历目录 → 解析 AST → 收集注解 → 从容器查找 bean → 反射调用。
+func ScanScheduledTasks(container core.Container, scanDir string) ([]Task, error) <span class="cov8" title="1">{
+        annotations, err := parseAnnotationsFromDir(scanDir)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">if len(annotations) == 0 </span><span class="cov0" title="0">{
+                return nil, nil
+        }</span>
+        <span class="cov8" title="1">return buildTasksFromAnnotations(container, annotations)</span>
+}
+
+// parseAnnotationsFromDir 扫描目录下所有 Go 源文件，解析 @Scheduled 注解
+func parseAnnotationsFromDir(scanDir string) ([]annotationInfo, error) <span class="cov8" title="1">{
+        fset := token.NewFileSet()
+        files, err := walkGoFiles(scanDir)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">var annotations []annotationInfo
+        for _, filePath := range files </span><span class="cov8" title="1">{
+                f, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
+                if err != nil </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov8" title="1">structNames := collectStructNames(f)
+                fileAnnotations := collectScheduledAnnotations(f, structNames)
+                annotations = append(annotations, fileAnnotations...)</span>
+        }
+        <span class="cov8" title="1">return annotations, nil</span>
+}
+
+// walkGoFiles 递归遍历目录，收集所有非 _test.go 的 Go 源文件
+func walkGoFiles(scanDir string) ([]string, error) <span class="cov8" title="1">{
+        var files []string
+        err := filepath.WalkDir(scanDir, func(path string, d fs.DirEntry, err error) error </span><span class="cov8" title="1">{
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov8" title="1">if d.IsDir() </span><span class="cov8" title="1">{
+                        return nil
+                }</span>
+                <span class="cov8" title="1">name := d.Name()
+                if !strings.HasSuffix(name, "_test.go") &amp;&amp; strings.HasSuffix(name, ".go") </span><span class="cov8" title="1">{
+                        files = append(files, path)
+                }</span>
+                <span class="cov8" title="1">return nil</span>
+        })
+        <span class="cov8" title="1">if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("schedule: failed to walk directory %s: %w", scanDir, err)
+        }</span>
+        <span class="cov8" title="1">return files, nil</span>
+}
+
+// buildTasksFromAnnotations 根据注解信息从容器中查找 bean 并构造 Task 列表
+//
+// 通过反射查找 bean 上的对应方法并包装为 Task，方法签名必须为 func(context.Context) error
+func buildTasksFromAnnotations(container core.Container, annotations []annotationInfo) ([]Task, error) <span class="cov8" title="1">{
+        var tasks []Task
+        for _, ann := range annotations </span><span class="cov8" title="1">{
+                beanID := toFirstCharLower(ann.structName)
+                bean, err := container.Get(beanID)
+                if err != nil </span><span class="cov8" title="1">{
+                        // 通过默认 ID 找不到时，遍历所有 bean 按类型名匹配
+                        bean = findBeanByStructName(container, ann.structName)
+                        if bean == nil </span><span class="cov8" title="1">{
+                                continue</span>
+                        }
+                }
+                <span class="cov0" title="0">method := resolveBeanMethod(bean, ann.methodName)
+                if !method.IsValid() </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov0" title="0">taskName := ann.structName + "." + ann.methodName
+                methodCopy := method
+                task := NewTask(taskName, ann.cronExpr, func(ctx context.Context) error </span><span class="cov0" title="0">{
+                        results := methodCopy.Call([]reflect.Value{reflect.ValueOf(ctx)})
+                        if len(results) == 0 </span><span class="cov0" title="0">{
+                                return nil
+                        }</span>
+                        <span class="cov0" title="0">if err, ok := results[0].Interface().(error); ok </span><span class="cov0" title="0">{
+                                return err
+                        }</span>
+                        <span class="cov0" title="0">return nil</span>
+                })
+                <span class="cov0" title="0">tasks = append(tasks, task)</span>
+        }
+        <span class="cov8" title="1">return tasks, nil</span>
+}
+
+// resolveBeanMethod 在 bean 上按名称查找方法，支持指针/值接收者
+//
+// 先尝试指针接收者方法查找，失败后再尝试值接收者方法查找
+func resolveBeanMethod(bean any, methodName string) reflect.Value <span class="cov8" title="1">{
+        beanVal := reflect.ValueOf(bean)
+        method := beanVal.MethodByName(methodName)
+        if method.IsValid() </span><span class="cov8" title="1">{
+                return method
+        }</span>
+        <span class="cov0" title="0">if beanVal.Kind() == reflect.Pointer </span><span class="cov0" title="0">{
+                method = beanVal.Elem().MethodByName(methodName)
+        }</span>
+        <span class="cov0" title="0">return method</span>
+}
+
+// collectStructNames 从 AST 中收集所有结构体类型名称
+func collectStructNames(f *ast.File) map[string]bool <span class="cov8" title="1">{
+        names := make(map[string]bool)
+        for _, decl := range f.Decls </span><span class="cov8" title="1">{
+                genDecl, ok := decl.(*ast.GenDecl)
+                if !ok || genDecl.Tok != token.TYPE </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+                <span class="cov8" title="1">for _, spec := range genDecl.Specs </span><span class="cov8" title="1">{
+                        typeSpec, ok := spec.(*ast.TypeSpec)
+                        if !ok </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+                        <span class="cov8" title="1">_, isStruct := typeSpec.Type.(*ast.StructType)
+                        if !isStruct </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+                        <span class="cov8" title="1">names[typeSpec.Name.Name] = true</span>
+                }
+        }
+        <span class="cov8" title="1">return names</span>
+}
+
+// collectScheduledAnnotations 在 AST 文件中收集所有 @Scheduled 注解
+//
+// 匹配条件：方法是结构体的接收者方法，且有 @Scheduled(cron="...") 注释。
+func collectScheduledAnnotations(f *ast.File, structNames map[string]bool) []annotationInfo <span class="cov8" title="1">{
+        var result []annotationInfo
+
+        for _, decl := range f.Decls </span><span class="cov8" title="1">{
+                funcDecl, ok := decl.(*ast.FuncDecl)
+                if !ok || funcDecl.Recv == nil </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">recvType := resolveRecvType(funcDecl.Recv)
+                if !structNames[recvType] </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov8" title="1">if funcDecl.Doc == nil </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">for _, comment := range funcDecl.Doc.List </span><span class="cov8" title="1">{
+                        text := strings.TrimSpace(comment.Text)
+                        text = strings.TrimPrefix(text, "//")
+                        text = strings.TrimPrefix(text, "/*")
+                        text = strings.TrimSpace(text)
+
+                        if !strings.HasPrefix(strings.ToLower(text), "@scheduled") </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+                        <span class="cov8" title="1">cronExpr := extractCronFromAnnotation(text)
+                        if cronExpr == "" </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+
+                        <span class="cov8" title="1">result = append(result, annotationInfo{
+                                structName: recvType,
+                                methodName: funcDecl.Name.Name,
+                                cronExpr:   cronExpr,
+                        })</span>
+                }
+        }
+
+        <span class="cov8" title="1">return result</span>
+}
+
+// resolveRecvType 解析接收者类型名称（支持指针和值接收者）
+func resolveRecvType(recv *ast.FieldList) string <span class="cov8" title="1">{
+        if recv == nil || len(recv.List) == 0 </span><span class="cov0" title="0">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">expr := recv.List[0].Type
+        switch t := expr.(type) </span>{
+        case *ast.StarExpr:<span class="cov8" title="1">
+                if ident, ok := t.X.(*ast.Ident); ok </span><span class="cov8" title="1">{
+                        return ident.Name
+                }</span>
+        case *ast.Ident:<span class="cov0" title="0">
+                return t.Name</span>
+        }
+        <span class="cov0" title="0">return ""</span>
+}
+
+// extractCronFromAnnotation 从 @Scheduled 注解文本中提取 cron 表达式
+//
+// 支持格式:
+//   - @Scheduled(cron="0/5 * * * * ?")
+//   - @Scheduled(cron='0/5 * * * * ?', zone="UTC")
+//
+// 不正确的多参数格式之前会导致解析错误。
+func extractCronFromAnnotation(text string) string <span class="cov8" title="1">{
+        start := strings.Index(text, "(")
+        if start &lt; 0 </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">end := strings.LastIndex(text, ")")
+        if end &lt;= start </span><span class="cov0" title="0">{
+                return ""
+        }</span>
+
+        <span class="cov8" title="1">paramsStr := text[start+1 : end]
+
+        cronPrefix := "cron="
+        _, after, ok := strings.Cut(paramsStr, cronPrefix)
+        if !ok </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+
+        <span class="cov8" title="1">valPart := after
+        if len(valPart) == 0 </span><span class="cov0" title="0">{
+                return ""
+        }</span>
+
+        <span class="cov8" title="1">quote := valPart[0]
+        if quote != '"' &amp;&amp; quote != '\'' </span><span class="cov0" title="0">{
+                return ""
+        }</span>
+
+        <span class="cov8" title="1">closeIdx := strings.IndexByte(valPart[1:], quote)
+        if closeIdx &lt; 0 </span><span class="cov0" title="0">{
+                return ""
+        }</span>
+
+        <span class="cov8" title="1">return valPart[1 : 1+closeIdx]</span>
+}
+
+// findBeanByStructName 遍历容器按 structName 后缀匹配 bean
+func findBeanByStructName(container core.Container, structName string) any <span class="cov8" title="1">{
+        for _, info := range container.ListBeans() </span><span class="cov8" title="1">{
+                if strings.HasSuffix(info.Type, "."+structName) || info.Type == structName </span><span class="cov0" title="0">{
+                        if bean, err := container.Get(info.ID); err == nil </span><span class="cov0" title="0">{
+                                return bean
+                        }</span>
+                }
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+// toFirstCharLower 将字符串首字母转为小写
+//
+// 用于将结构体类型名转为默认 bean ID（如 MyService → myService）
+func toFirstCharLower(s string) string <span class="cov8" title="1">{
+        if s == "" </span><span class="cov8" title="1">{
+                return s
+        }</span>
+        <span class="cov8" title="1">return strings.ToLower(s[:1]) + s[1:]</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">// Package schedule 定时任务调度框架的自动配置与启动器
+//
+// 提供 ScheduleAutoConfiguration 根据配置文件创建 Scheduler bean，
+// 以及 ScheduleStarter 负责调度器的生命周期管理（启动和优雅关闭）。
+// Package schedule 提供定时任务调度器的自动配置。
+//
+// 当 schedule.enabled=true 时自动启用，从 Environment 中读取 schedule.pool-size、schedule.scan-annotations 等配置项，
+// 创建并注册 Scheduler Bean 到 IoC 容器中（Bean ID: scheduleScheduler）。
+// 同时注册 ScheduleStarter 启动器，负责在应用启动时开始调度、关闭时优雅停止。
+package schedule
+
+import (
+        "context"
+        "log/slog"
+
+        "github.com/xudefa/go-boot/boot"
+        "github.com/xudefa/go-boot/condition"
+        "github.com/xudefa/go-boot/constants"
+        "github.com/xudefa/go-boot/core"
+)
+
+func init() <span class="cov8" title="1">{
+        boot.RegisterAutoConfig(&amp;ScheduleAutoConfiguration{},
+                condition.OnProperty(constants.ScheduleEnabled, constants.ConditionTrue),
+        )
+        boot.RegisterStarter(&amp;ScheduleStarter{})
+}</span>
+
+// ScheduleAutoConfiguration 定时任务自动配置
+//
+// 根据配置创建 Scheduler bean:
+//   - schedule.pool-size: 并发池大小（默认 10）
+//   - schedule.scan-annotations: 是否扫描 @Scheduled 注解（默认 true）
+type ScheduleAutoConfiguration struct{}
+
+func (s *ScheduleAutoConfiguration) Configure(ctx boot.ApplicationContext) error <span class="cov8" title="1">{
+        env := ctx.Environment()
+
+        poolSize := env.GetInt(constants.SchedulePoolSize, constants.DefaultSchedulePoolSize)
+        scanAnnotations := env.GetBool(constants.ScheduleScanAnnotations, constants.DefaultScheduleScanAnnotations)
+
+        scheduler := NewScheduler(WithPoolSize(poolSize))
+
+        if scanAnnotations </span><span class="cov0" title="0">{
+                tasks, err := ScanScheduledTasks(ctx.Container(), ".")
+                if err != nil </span><span class="cov0" title="0">{
+                        slog.Warn("schedule: failed to scan scheduled annotations", "error", err)
+                }</span> else<span class="cov0" title="0"> {
+                        for _, t := range tasks </span><span class="cov0" title="0">{
+                                if err := scheduler.Register(t); err != nil </span><span class="cov0" title="0">{
+                                        slog.Warn("schedule: failed to register task", "task", t.Name(), "error", err)
+                                }</span>
+                        }
+                }
+        }
+
+        <span class="cov8" title="1">if err := ctx.Register(constants.ScheduleSchedulerBeanID, core.Bean(scheduler), core.Singleton()); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// ScheduleStarter 调度器启动器，负责启动和停止 Scheduler
+type ScheduleStarter struct{}
+
+func (s *ScheduleStarter) Name() string <span class="cov8" title="1">{
+        return "ScheduleStarter"
+}</span>
+
+func (s *ScheduleStarter) Dependencies() []string <span class="cov8" title="1">{
+        return nil
+}</span>
+
+func (s *ScheduleStarter) Configure(ctx boot.ApplicationContext) error <span class="cov8" title="1">{
+        return nil
+}</span>
+
+func (s *ScheduleStarter) Start(ctx boot.ApplicationContext) error <span class="cov8" title="1">{
+        scheduler, ok := resolveScheduler(ctx)
+        if !ok </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">if scheduler.IsRunning() </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return scheduler.Start(context.Background())</span>
+}
+
+func (s *ScheduleStarter) Stop(ctx boot.ApplicationContext) error <span class="cov8" title="1">{
+        scheduler, ok := resolveScheduler(ctx)
+        if !ok </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return scheduler.Shutdown(context.Background())</span>
+}
+
+func (s *ScheduleStarter) GetCondition() condition.Condition <span class="cov8" title="1">{
+        return condition.OnProperty(constants.ScheduleEnabled, constants.ConditionTrue)
+}</span>
+
+func resolveScheduler(ctx boot.ApplicationContext) (Scheduler, bool) <span class="cov8" title="1">{
+        bean, err := ctx.Get(constants.ScheduleSchedulerBeanID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, false
+        }</span>
+        <span class="cov8" title="1">scheduler, ok := bean.(Scheduler)
+        return scheduler, ok</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">// Package schedule 定时任务调度框架
+//
+// 提供 6 字段 Spring 风格 Cron 表达式解析（CronExpression）、
+// 任务调度器（Scheduler）、任务接口（Task）以及 @Scheduled 注解扫描。
+package schedule
+
+import (
+        "fmt"
+        "strconv"
+        "strings"
+        "time"
+)
+
+var monthNames = map[string]int{
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+var dayNames = map[string]int{
+        "sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6,
+}
+
+// CronExpression 6字段 Spring 风格 Cron 表达式（秒 分 时 日 月 周）
+type CronExpression struct {
+        second        uint64
+        minute        uint64
+        hour          uint64
+        dayOfMonth    uint64
+        month         uint64
+        dayOfWeek     uint64
+        hasDayOfMonth bool
+        hasDayOfWeek  bool
+}
+
+// Parse 将 6字段 Cron 表达式解析为 CronExpression
+//
+// 格式: 秒 分 时 日 月 周
+//   - 秒: 0-59
+//   - 分: 0-59
+//   - 时: 0-23
+//   - 日: 1-31，支持 ? 表示不指定
+//   - 月: 1-12 或 JAN-DEC
+//   - 周: 0-6 或 SUN-SAT，支持 ? 表示不指定
+//
+// 每个字段支持: 固定值, 列表(,), 范围(-), 步进(/), 通配符(*)
+func Parse(expr string) (*CronExpression, error) <span class="cov8" title="1">{
+        fields := strings.Fields(expr)
+        if len(fields) != 6 </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("schedule: cron expression must have 6 fields, got %d", len(fields))
+        }</span>
+
+        <span class="cov8" title="1">ce := &amp;CronExpression{}
+        var err error
+
+        ce.second, err = parseField(fields[0], 0, 59)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("schedule: invalid seconds field %q: %w", fields[0], err)
+        }</span>
+
+        <span class="cov8" title="1">ce.minute, err = parseField(fields[1], 0, 59)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("schedule: invalid minutes field %q: %w", fields[1], err)
+        }</span>
+
+        <span class="cov8" title="1">ce.hour, err = parseField(fields[2], 0, 23)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("schedule: invalid hours field %q: %w", fields[2], err)
+        }</span>
+
+        <span class="cov8" title="1">if fields[3] == "?" </span><span class="cov8" title="1">{
+                ce.hasDayOfMonth = false
+        }</span> else<span class="cov8" title="1"> {
+                ce.hasDayOfMonth = true
+                ce.dayOfMonth, err = parseField(fields[3], 1, 31)
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, fmt.Errorf("schedule: invalid day-of-month field %q: %w", fields[3], err)
+                }</span>
+        }
+
+        <span class="cov8" title="1">ce.month, err = parseFieldWithNames(fields[4], 1, 12, monthNames)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("schedule: invalid month field %q: %w", fields[4], err)
+        }</span>
+
+        <span class="cov8" title="1">if fields[5] == "?" </span><span class="cov8" title="1">{
+                ce.hasDayOfWeek = false
+        }</span> else<span class="cov8" title="1"> {
+                ce.hasDayOfWeek = true
+                ce.dayOfWeek, err = parseFieldWithNames(fields[5], 0, 6, dayNames)
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, fmt.Errorf("schedule: invalid day-of-week field %q: %w", fields[5], err)
+                }</span>
+        }
+
+        <span class="cov8" title="1">if !ce.hasDayOfMonth </span><span class="cov8" title="1">{
+                ce.dayOfMonth = allBits(1, 31)
+        }</span>
+        <span class="cov8" title="1">if !ce.hasDayOfWeek </span><span class="cov8" title="1">{
+                ce.dayOfWeek = allBits(0, 6)
+        }</span>
+
+        <span class="cov8" title="1">return ce, nil</span>
+}
+
+// Next 计算从 after 时刻起下一个满足 Cron 表达式的时间点
+//
+// 从 after+1秒 开始向前搜索，最大搜索范围为 4 年。
+// 如果 4 年内无法找到匹配时间，返回零值 time.Time{}。
+func (ce *CronExpression) Next(after time.Time) time.Time <span class="cov8" title="1">{
+        t := after.UTC().Add(time.Second).Truncate(time.Second)
+        end := t.AddDate(4, 0, 0)
+
+        for t.Before(end) </span><span class="cov8" title="1">{
+                t = ce.advanceToMonth(t)
+                if !t.Before(end) </span><span class="cov8" title="1">{
+                        break</span>
+                }
+
+                <span class="cov8" title="1">var dayAdvanced bool
+                t, dayAdvanced = ce.advanceToDay(t)
+                if !t.Before(end) </span><span class="cov8" title="1">{
+                        break</span>
+                }
+                <span class="cov8" title="1">if dayAdvanced </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">h := t.Hour()
+                if !isBitSet(ce.hour, h) </span><span class="cov8" title="1">{
+                        t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, time.UTC).Add(time.Hour)
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">m := t.Minute()
+                if !isBitSet(ce.minute, m) </span><span class="cov8" title="1">{
+                        t = t.Add(time.Minute)
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">s := t.Second()
+                if !isBitSet(ce.second, s) </span><span class="cov8" title="1">{
+                        t = t.Add(time.Second)
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">return t</span>
+        }
+
+        <span class="cov8" title="1">return time.Time{}</span>
+}
+
+// advanceToMonth 将 t 推进到满足月份条件的月份第一天
+func (ce *CronExpression) advanceToMonth(t time.Time) time.Time <span class="cov8" title="1">{
+        m := int(t.Month())
+        if isBitSet(ce.month, m) </span><span class="cov8" title="1">{
+                return t
+        }</span>
+        <span class="cov8" title="1">nextMonth := t.Month() + 1
+        y := t.Year()
+        if nextMonth &gt; 12 </span><span class="cov8" title="1">{
+                nextMonth = 1
+                y++
+        }</span>
+        <span class="cov8" title="1">return time.Date(y, nextMonth, 1, 0, 0, 0, 0, time.UTC)</span>
+}
+
+// advanceToDay 检查日/周条件，匹配时返回 (t, false)，不匹配时推进到次日返回 (nextDay, true)
+func (ce *CronExpression) advanceToDay(t time.Time) (time.Time, bool) <span class="cov8" title="1">{
+        dom := t.Day()
+        dow := int(t.Weekday())
+        domMatch := isBitSet(ce.dayOfMonth, dom)
+        dowMatch := isBitSet(ce.dayOfWeek, dow)
+
+        matched := false
+        if ce.hasDayOfMonth &amp;&amp; ce.hasDayOfWeek </span><span class="cov8" title="1">{
+                matched = domMatch || dowMatch
+        }</span> else<span class="cov8" title="1"> if ce.hasDayOfMonth </span><span class="cov8" title="1">{
+                matched = domMatch
+        }</span> else<span class="cov8" title="1"> {
+                matched = dowMatch
+        }</span>
+
+        <span class="cov8" title="1">if matched </span><span class="cov8" title="1">{
+                return t, false
+        }</span>
+        <span class="cov8" title="1">return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1), true</span>
+}
+
+// allBits 生成 [min, max] 范围内所有位均为 1 的位图
+func allBits(min, max int) uint64 <span class="cov8" title="1">{
+        var bits uint64
+        for i := min; i &lt;= max; i++ </span><span class="cov8" title="1">{
+                setBit(&amp;bits, i)
+        }</span>
+        <span class="cov8" title="1">return bits</span>
+}
+
+// setBit 将位图中 pos 位置为 1
+func setBit(bits *uint64, pos int) <span class="cov8" title="1">{
+        *bits |= 1 &lt;&lt; uint(pos)
+}</span>
+
+// isBitSet 检查位图中 pos 位置是否为 1
+func isBitSet(bits uint64, pos int) bool <span class="cov8" title="1">{
+        if pos &lt; 0 || pos &gt; 63 </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov8" title="1">return bits&amp;(1&lt;&lt;uint(pos)) != 0</span>
+}
+
+// parseField 解析单个 Cron 字段，返回对应的位图
+//
+// 支持格式:
+//   - 通配符: *
+//   - 固定值: 5
+//   - 列表: 1,3,5
+//   - 范围: 1-5
+//   - 步进: */5, 1-10/2, 5/2
+func parseField(field string, min, max int) (uint64, error) <span class="cov8" title="1">{
+        if field == "*" || field == "?" </span><span class="cov8" title="1">{
+                return allBits(min, max), nil
+        }</span>
+
+        <span class="cov8" title="1">var bits uint64
+
+        parts := strings.SplitSeq(field, ",")
+        for part := range parts </span><span class="cov8" title="1">{
+                part = strings.TrimSpace(part)
+                if part == "" </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">var err error
+                if strings.Contains(part, "/") </span><span class="cov8" title="1">{
+                        bits, err = parseStep(bits, part, min, max)
+                        if err != nil </span><span class="cov8" title="1">{
+                                return 0, err
+                        }</span>
+                } else<span class="cov8" title="1"> if strings.Contains(part, "-") </span><span class="cov8" title="1">{
+                        vals, err := parseRange(part, min, max)
+                        if err != nil </span><span class="cov8" title="1">{
+                                return 0, err
+                        }</span>
+                        <span class="cov8" title="1">bits |= vals</span>
+                } else<span class="cov8" title="1"> {
+                        val, err := strconv.Atoi(part)
+                        if err != nil </span><span class="cov8" title="1">{
+                                return 0, fmt.Errorf("invalid value %q", part)
+                        }</span>
+                        <span class="cov8" title="1">if val &lt; min || val &gt; max </span><span class="cov8" title="1">{
+                                return 0, fmt.Errorf("value %d out of range [%d,%d]", val, min, max)
+                        }</span>
+                        <span class="cov8" title="1">setBit(&amp;bits, val)</span>
+                }
+        }
+
+        <span class="cov8" title="1">return bits, nil</span>
+}
+
+// parseFieldWithNames 解析支持名称映射的字段（月份、星期）
+func parseFieldWithNames(field string, min, max int, names map[string]int) (uint64, error) <span class="cov8" title="1">{
+        resolved := resolveNames(field, names)
+        return parseField(resolved, min, max)
+}</span>
+
+// resolveNames 将字段中的名称替换为数字值（如 JAN→1, MON→1）
+func resolveNames(field string, names map[string]int) string <span class="cov8" title="1">{
+        lower := strings.ToLower(field)
+        for name, val := range names </span><span class="cov8" title="1">{
+                lower = strings.ReplaceAll(lower, strings.ToLower(name), strconv.Itoa(val))
+        }</span>
+        <span class="cov8" title="1">return lower</span>
+}
+
+// parseStep 解析步进表达式（如 */5、1-10/2、5/2）
+func parseStep(bits uint64, part string, min, max int) (uint64, error) <span class="cov8" title="1">{
+        subparts := strings.SplitN(part, "/", 2)
+        if len(subparts) != 2 </span><span class="cov0" title="0">{
+                return 0, fmt.Errorf("invalid step expression %q", part)
+        }</span>
+
+        <span class="cov8" title="1">step, err := strconv.Atoi(subparts[1])
+        if err != nil || step &lt;= 0 </span><span class="cov8" title="1">{
+                return 0, fmt.Errorf("invalid step value %q", subparts[1])
+        }</span>
+
+        <span class="cov8" title="1">var rangeMin, rangeMax int
+        if subparts[0] == "*" </span><span class="cov8" title="1">{
+                rangeMin = min
+                rangeMax = max
+        }</span> else<span class="cov8" title="1"> if strings.Contains(subparts[0], "-") </span><span class="cov8" title="1">{
+                rangeParts := strings.SplitN(subparts[0], "-", 2)
+                rangeMin, err = strconv.Atoi(rangeParts[0])
+                if err != nil </span><span class="cov0" title="0">{
+                        return 0, fmt.Errorf("invalid range start %q", rangeParts[0])
+                }</span>
+                <span class="cov8" title="1">rangeMax, err = strconv.Atoi(rangeParts[1])
+                if err != nil </span><span class="cov0" title="0">{
+                        return 0, fmt.Errorf("invalid range end %q", rangeParts[1])
+                }</span>
+        } else<span class="cov8" title="1"> {
+                rangeMin, err = strconv.Atoi(subparts[0])
+                if err != nil </span><span class="cov0" title="0">{
+                        return 0, fmt.Errorf("invalid step start %q", subparts[0])
+                }</span>
+                <span class="cov8" title="1">rangeMax = max</span>
+        }
+
+        <span class="cov8" title="1">if rangeMin &gt; rangeMax </span><span class="cov8" title="1">{
+                return 0, fmt.Errorf("range start %d &gt; end %d", rangeMin, rangeMax)
+        }</span>
+        <span class="cov8" title="1">if rangeMin &lt; min || rangeMax &gt; max </span><span class="cov0" title="0">{
+                return 0, fmt.Errorf("step range [%d,%d] out of bounds [%d,%d]", rangeMin, rangeMax, min, max)
+        }</span>
+
+        // 步进值不能超过范围大小，防止整数溢出
+        <span class="cov8" title="1">if step &gt; rangeMax-rangeMin </span><span class="cov0" title="0">{
+                setBit(&amp;bits, rangeMin)
+        }</span> else<span class="cov8" title="1"> {
+                for i := rangeMin; i &lt;= rangeMax; i += step </span><span class="cov8" title="1">{
+                        setBit(&amp;bits, i)
+                }</span>
+        }
+        <span class="cov8" title="1">return bits, nil</span>
+}
+
+// parseRange 解析范围表达式（如 1-5），返回范围中所有值的位图
+func parseRange(part string, min, max int) (uint64, error) <span class="cov8" title="1">{
+        rangeParts := strings.SplitN(part, "-", 2)
+        rangeMin, err := strconv.Atoi(rangeParts[0])
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, fmt.Errorf("invalid range start %q", rangeParts[0])
+        }</span>
+        <span class="cov8" title="1">rangeMax, err := strconv.Atoi(rangeParts[1])
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, fmt.Errorf("invalid range end %q", rangeParts[1])
+        }</span>
+
+        <span class="cov8" title="1">if rangeMin &gt; rangeMax </span><span class="cov8" title="1">{
+                return 0, fmt.Errorf("range start %d &gt; end %d", rangeMin, rangeMax)
+        }</span>
+        <span class="cov8" title="1">if rangeMin &lt; min || rangeMax &gt; max </span><span class="cov0" title="0">{
+                return 0, fmt.Errorf("range [%d,%d] out of bounds [%d,%d]", rangeMin, rangeMax, min, max)
+        }</span>
+
+        <span class="cov8" title="1">var bits uint64
+        for i := rangeMin; i &lt;= rangeMax; i++ </span><span class="cov8" title="1">{
+                setBit(&amp;bits, i)
+        }</span>
+        <span class="cov8" title="1">return bits, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">// Package schedule 定时任务调度框架
+//
+// 提供 6 字段 Spring 风格 Cron 表达式解析（CronExpression）、
+// 任务调度器（Scheduler）、任务接口（Task）以及 @Scheduled 注解扫描。
+package schedule
+
+import (
+        "container/heap"
+        "context"
+        "fmt"
+        "sync"
+        "time"
+)
+
+// Scheduler 定时任务调度器接口
+type Scheduler interface {
+        // Start 启动调度器，开始触发定时任务
+        Start(ctx context.Context) error
+        // Shutdown 优雅关闭，等待正在执行的任务完成
+        Shutdown(ctx context.Context) error
+        // Register 注册定时任务，任务名唯一，重复返回 error
+        Register(task Task) error
+        // Unregister 注销定时任务
+        Unregister(name string) bool
+        // IsRunning 返回调度器是否正在运行
+        IsRunning() bool
+        // RegisteredTasks 返回所有已注册任务
+        RegisteredTasks() []Task
+}
+
+type schedulerOptions struct {
+        poolSize     int
+        errorHandler func(task Task, err error)
+}
+
+// SchedulerOption 调度器选项函数
+type SchedulerOption func(*schedulerOptions)
+
+// WithPoolSize 设置任务执行池大小（最大并发数，默认 10）
+func WithPoolSize(n int) SchedulerOption <span class="cov8" title="1">{
+        return func(o *schedulerOptions) </span><span class="cov8" title="1">{
+                if n &gt; 0 </span><span class="cov8" title="1">{
+                        o.poolSize = n
+                }</span>
+        }
+}
+
+// WithErrorHandler 设置执行错误处理函数
+func WithErrorHandler(h func(task Task, err error)) SchedulerOption <span class="cov8" title="1">{
+        return func(o *schedulerOptions) </span><span class="cov8" title="1">{
+                o.errorHandler = h
+        }</span>
+}
+
+// scheduledTask 已注册的定时任务，包含下次执行时间
+type scheduledTask struct {
+        task Task
+        expr *CronExpression
+        next time.Time
+        idx  int
+}
+
+// taskHeap 基于最小堆的 scheduledTask 优先队列，按下次执行时间排序
+type taskHeap []*scheduledTask
+
+func (h taskHeap) Len() int           <span class="cov8" title="1">{ return len(h) }</span>
+func (h taskHeap) Less(i, j int) bool <span class="cov8" title="1">{ return h[i].next.Before(h[j].next) }</span>
+func (h taskHeap) Swap(i, j int)      <span class="cov0" title="0">{ h[i], h[j] = h[j], h[i]; h[i].idx = i; h[j].idx = j }</span>
+func (h *taskHeap) Push(x any) <span class="cov8" title="1">{
+        item, ok := x.(*scheduledTask)
+        if !ok </span><span class="cov0" title="0">{
+                panic(fmt.Sprintf("heap: expected *scheduledTask, got %T", x))</span>
+        }
+        <span class="cov8" title="1">n := len(*h)
+        item.idx = n
+        *h = append(*h, item)</span>
+}
+func (h *taskHeap) Pop() any <span class="cov8" title="1">{
+        old := *h
+        n := len(old)
+        item := old[n-1]
+        old[n-1] = nil
+        item.idx = -1
+        *h = old[:n-1]
+        return item
+}</span>
+
+type schedulerImpl struct {
+        tasks   map[string]*scheduledTask
+        heap    taskHeap
+        timer   *time.Timer
+        wakeCh  chan struct{}
+        ctx     context.Context
+        cancel  context.CancelFunc
+        running bool
+        mu      sync.RWMutex
+        wg      sync.WaitGroup
+        sem     chan struct{}
+        opts    schedulerOptions
+}
+
+// NewScheduler 创建调度器
+func NewScheduler(opts ...SchedulerOption) Scheduler <span class="cov8" title="1">{
+        o := schedulerOptions{poolSize: 10}
+        for _, opt := range opts </span><span class="cov8" title="1">{
+                opt(&amp;o)
+        }</span>
+        <span class="cov8" title="1">if o.errorHandler == nil </span><span class="cov8" title="1">{
+                o.errorHandler = func(task Task, err error) </span>{<span class="cov8" title="1">}</span>
+        }
+        <span class="cov8" title="1">return &amp;schedulerImpl{
+                tasks:  make(map[string]*scheduledTask),
+                heap:   make(taskHeap, 0),
+                wakeCh: make(chan struct{}, 1),
+                sem:    make(chan struct{}, o.poolSize),
+                opts:   o,
+        }</span>
+}
+
+// Start 启动调度器，创建内部上下文并启动主循环
+func (s *schedulerImpl) Start(ctx context.Context) error <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+        if s.running </span><span class="cov8" title="1">{
+                return fmt.Errorf("schedule: scheduler already running")
+        }</span>
+        <span class="cov8" title="1">s.ctx, s.cancel = context.WithCancel(ctx)
+        s.running = true
+        s.timer = time.NewTimer(0)
+        if !s.timer.Stop() </span><span class="cov0" title="0">{
+                &lt;-s.timer.C
+        }</span>
+        <span class="cov8" title="1">s.wg.Add(1)
+        go func() </span><span class="cov8" title="1">{
+                defer s.wg.Done()
+                s.loop()
+        }</span>()
+        <span class="cov8" title="1">return nil</span>
+}
+
+// Shutdown 优雅关闭调度器
+//
+// 先取消内部上下文阻止新任务派发，再等待所有执行中的任务完成。
+// 如果 ctx 超时，返回 ctx.Err() 但调度器仍会继续等待后台任务。
+func (s *schedulerImpl) Shutdown(ctx context.Context) error <span class="cov8" title="1">{
+        s.mu.Lock()
+        if !s.running </span><span class="cov8" title="1">{
+                s.mu.Unlock()
+                return nil
+        }</span>
+        <span class="cov8" title="1">s.running = false
+        s.mu.Unlock()
+
+        s.cancel()
+        s.timer.Stop()
+        s.wake()
+
+        done := make(chan struct{})
+        go func() </span><span class="cov8" title="1">{
+                s.wg.Wait()
+                close(done)
+        }</span>()
+
+        <span class="cov8" title="1">select </span>{
+        case &lt;-done:<span class="cov8" title="1">
+                return nil</span>
+        case &lt;-ctx.Done():<span class="cov0" title="0">
+                go func() </span><span class="cov0" title="0">{
+                        &lt;-done
+                }</span>()
+                <span class="cov0" title="0">return ctx.Err()</span>
+        }
+}
+
+// Register 注册定时任务
+//
+// 任务名必须唯一。如果调度器已运行，注册后立即唤醒主循环重新计算最近执行时间。
+func (s *schedulerImpl) Register(task Task) error <span class="cov8" title="1">{
+        expr, err := Parse(task.Cron())
+        if err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+
+        <span class="cov8" title="1">next := expr.Next(time.Now())
+        if next.IsZero() </span><span class="cov8" title="1">{
+                return fmt.Errorf("schedule: task %q will never fire (cron: %s)", task.Name(), task.Cron())
+        }</span>
+
+        <span class="cov8" title="1">s.mu.Lock()
+        defer s.mu.Unlock()
+
+        if _, exists := s.tasks[task.Name()]; exists </span><span class="cov8" title="1">{
+                return fmt.Errorf("schedule: task %q already registered", task.Name())
+        }</span>
+
+        <span class="cov8" title="1">st := &amp;scheduledTask{
+                task: task,
+                expr: expr,
+                next: next,
+                idx:  -1,
+        }
+        s.tasks[task.Name()] = st
+        heap.Push(&amp;s.heap, st)
+
+        if s.running &amp;&amp; len(s.heap) &gt; 0 &amp;&amp; s.heap[0] == st </span><span class="cov8" title="1">{
+                s.wake()
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// Unregister 注销定时任务，返回任务是否存在
+//
+// 如果移除的是堆顶任务且调度器正在运行，会唤醒主循环重新计算。
+func (s *schedulerImpl) Unregister(name string) bool <span class="cov8" title="1">{
+        s.mu.Lock()
+        st, exists := s.tasks[name]
+        if !exists </span><span class="cov8" title="1">{
+                s.mu.Unlock()
+                return false
+        }</span>
+        <span class="cov8" title="1">delete(s.tasks, name)
+        wasTop := s.heap.Len() &gt; 0 &amp;&amp; s.heap[0] == st
+        if st.idx &gt;= 0 &amp;&amp; st.idx &lt; len(s.heap) </span><span class="cov8" title="1">{
+                heap.Remove(&amp;s.heap, st.idx)
+        }</span>
+        <span class="cov8" title="1">running := s.running
+        s.mu.Unlock()
+
+        if running &amp;&amp; (wasTop || s.heap.Len() == 0) </span><span class="cov8" title="1">{
+                s.wake()
+        }</span>
+        <span class="cov8" title="1">return true</span>
+}
+
+// IsRunning 返回调度器是否正在运行
+func (s *schedulerImpl) IsRunning() bool <span class="cov8" title="1">{
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+        return s.running
+}</span>
+
+// RegisteredTasks 返回所有已注册任务的快照
+func (s *schedulerImpl) RegisteredTasks() []Task <span class="cov8" title="1">{
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+        tasks := make([]Task, 0, len(s.tasks))
+        for _, st := range s.tasks </span><span class="cov8" title="1">{
+                tasks = append(tasks, st.task)
+        }</span>
+        <span class="cov8" title="1">return tasks</span>
+}
+
+// loop 调度器主循环
+//
+// 不断从堆顶取出最近需执行的任务，等待至执行时间后派发执行。
+// 任务执行后重新计算下次执行时间并调整堆。
+func (s *schedulerImpl) loop() <span class="cov8" title="1">{
+        for </span><span class="cov8" title="1">{
+                s.mu.Lock()
+                if !s.running </span><span class="cov8" title="1">{
+                        s.mu.Unlock()
+                        return
+                }</span>
+                <span class="cov8" title="1">nextTask := s.peekTask()
+                if nextTask == nil </span><span class="cov8" title="1">{
+                        s.mu.Unlock()
+                        if !s.waitForWake() </span><span class="cov8" title="1">{
+                                return
+                        }</span>
+                        <span class="cov0" title="0">continue</span>
+                }
+                <span class="cov8" title="1">st := nextTask
+                now := time.Now()
+                if now.After(st.next) || now.Equal(st.next) </span><span class="cov8" title="1">{
+                        s.handleDueTask(st)
+                        s.mu.Unlock()
+                        s.executeTask(st.task)
+                        continue</span>
+                }
+                <span class="cov8" title="1">s.mu.Unlock()
+                if !s.waitForTimer(st.next.Sub(now)) </span><span class="cov8" title="1">{
+                        return
+                }</span>
+        }
+}
+
+// peekTask 查看堆顶任务，堆空时返回 nil
+func (s *schedulerImpl) peekTask() *scheduledTask <span class="cov8" title="1">{
+        if s.heap.Len() == 0 </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return s.heap[0]</span>
+}
+
+// handleDueTask 处理到期任务：重新计算下次执行时间，如果永不到期则移除
+func (s *schedulerImpl) handleDueTask(st *scheduledTask) <span class="cov8" title="1">{
+        newNext := st.expr.Next(time.Now())
+        if newNext.IsZero() </span><span class="cov0" title="0">{
+                heap.Remove(&amp;s.heap, 0)
+                delete(s.tasks, st.task.Name())
+        }</span> else<span class="cov8" title="1"> {
+                st.next = newNext
+                heap.Fix(&amp;s.heap, 0)
+        }</span>
+}
+
+// waitForWake 等待唤醒信号或关闭信号
+func (s *schedulerImpl) waitForWake() bool <span class="cov8" title="1">{
+        select </span>{
+        case &lt;-s.wakeCh:<span class="cov0" title="0">
+                return true</span>
+        case &lt;-s.ctx.Done():<span class="cov8" title="1">
+                return false</span>
+        }
+}
+
+// waitForTimer 等待定时器到期、唤醒信号或关闭信号
+func (s *schedulerImpl) waitForTimer(d time.Duration) bool <span class="cov8" title="1">{
+        s.timer.Reset(d)
+        select </span>{
+        case &lt;-s.timer.C:<span class="cov8" title="1">
+                return true</span>
+        case &lt;-s.wakeCh:<span class="cov8" title="1">
+                s.drainTimer()
+                return true</span>
+        case &lt;-s.ctx.Done():<span class="cov8" title="1">
+                s.drainTimer()
+                return false</span>
+        }
+}
+
+// drainTimer 安全排空定时器通道
+func (s *schedulerImpl) drainTimer() <span class="cov8" title="1">{
+        if !s.timer.Stop() </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-s.timer.C:<span class="cov0" title="0"></span>
+                default:<span class="cov8" title="1"></span>
+                }
+        }
+}
+
+// executeTask 异步执行任务，受并发池限制
+//
+// 先注册到 WaitGroup 再尝试获取信号量，确保 Shutdown 能正确等待。
+// 如果上下文已取消则跳过执行，防止关闭期间启动新任务。
+func (s *schedulerImpl) executeTask(task Task) <span class="cov8" title="1">{
+        s.wg.Go(func() </span><span class="cov8" title="1">{
+                select </span>{
+                case s.sem &lt;- struct{}{}:<span class="cov8" title="1"></span>
+                case &lt;-s.ctx.Done():<span class="cov0" title="0">
+                        return</span>
+                }
+                <span class="cov8" title="1">defer func() </span><span class="cov8" title="1">{ &lt;-s.sem }</span>()
+                <span class="cov8" title="1">defer func() </span><span class="cov8" title="1">{
+                        if r := recover(); r != nil </span><span class="cov8" title="1">{
+                                var err error
+                                switch x := r.(type) </span>{
+                                case error:<span class="cov0" title="0">
+                                        err = x</span>
+                                default:<span class="cov8" title="1">
+                                        err = fmt.Errorf("schedule: panic: %v", x)</span>
+                                }
+                                <span class="cov8" title="1">s.opts.errorHandler(task, err)</span>
+                        }
+                }()
+                <span class="cov8" title="1">if err := task.Execute(s.ctx); err != nil </span><span class="cov8" title="1">{
+                        s.opts.errorHandler(task, err)
+                }</span>
+        })
+}
+
+// wake 发送非阻塞唤醒信号给主循环
+func (s *schedulerImpl) wake() <span class="cov8" title="1">{
+        select </span>{
+        case s.wakeCh &lt;- struct{}{}:<span class="cov8" title="1"></span>
+        default:<span class="cov0" title="0"></span>
+        }
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">// Package schedule 定时任务调度框架
+//
+// 提供 6 字段 Spring 风格 Cron 表达式解析（CronExpression）、
+// 任务调度器（Scheduler）、任务接口（Task）以及 @Scheduled 注解扫描。
+package schedule
+
+import "context"
+
+// Task 定时任务接口
+//
+// 每个定时任务包含名称、Cron 表达式和执行逻辑。
+// 通过 NewTask 创建基于函数的任务实例。
+type Task interface {
+        // Name 返回任务名称，用于注册和查找
+        Name() string
+        // Cron 返回任务的 cron 表达式（6字段 Spring 风格）
+        Cron() string
+        // Execute 执行任务逻辑
+        Execute(ctx context.Context) error
+}
+
+type task struct {
+        name string
+        cron string
+        fn   func(context.Context) error
+}
+
+func (t *task) Name() string                      <span class="cov8" title="1">{ return t.name }</span>
+func (t *task) Cron() string                      <span class="cov8" title="1">{ return t.cron }</span>
+func (t *task) Execute(ctx context.Context) error <span class="cov8" title="1">{ return t.fn(ctx) }</span>
+
+// NewTask 创建基于函数的定时任务
+//
+//        name: 任务名称，必须唯一
+//        cronExpr: 6字段 Spring 风格 Cron 表达式
+//        fn: 任务执行函数
+func NewTask(name, cronExpr string, fn func(context.Context) error) Task <span class="cov8" title="1">{
+        return &amp;task{
+                name: name,
+                cron: cronExpr,
+                fn:   fn,
+        }
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">// Package schedule 定时任务调度框架的测试辅助文件
+package schedule
+
+import (
+        "errors"
+
+        "github.com/xudefa/go-boot/core"
+)
+
+type GetOption = core.GetOption
+type BuilderOption = core.BuilderOption
+type InvokeOption = core.InvokeOption
+
+// MockContainer 模拟容器用于测试
+type MockContainer struct {
+        beams map[string]interface{}
+}
+
+func (m *MockContainer) Get(id string, opts ...GetOption) (interface{}, error) <span class="cov8" title="1">{
+        if beam, exists := m.beams[id]; exists </span><span class="cov8" title="1">{
+                return beam, nil
+        }</span>
+        <span class="cov8" title="1">return nil, errors.New("bean not found")</span>
+}
+
+func (m *MockContainer) ListBeans() []core.BeanInfo <span class="cov8" title="1">{
+        var result []core.BeanInfo
+        for id := range m.beams </span><span class="cov8" title="1">{
+                result = append(result, core.BeanInfo{
+                        ID:   id,
+                        Type: "mock",
+                })
+        }</span>
+        <span class="cov8" title="1">return result</span>
+}
+
+func (m *MockContainer) Register(beanID string, builders ...BuilderOption) error <span class="cov8" title="1">{
+        if m.beams == nil </span><span class="cov8" title="1">{
+                m.beams = make(map[string]interface{})
+        }</span>
+
+        <span class="cov8" title="1">def := &amp;core.BeanDefinition{
+                Scope: core.SingletonScope,
+        }
+
+        for _, builder := range builders </span><span class="cov8" title="1">{
+                if err := builder(def); err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+        }
+
+        <span class="cov8" title="1">if def.Instance != nil </span><span class="cov8" title="1">{
+                m.beams[beanID] = def.Instance
+        }</span> else<span class="cov0" title="0"> if def.Factory != nil </span><span class="cov0" title="0">{
+                instance, err := def.Factory(m)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">m.beams[beanID] = instance</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (m *MockContainer) Inject(target interface{}) error <span class="cov0" title="0">{
+        return errors.New("not implemented")
+}</span>
+
+func (m *MockContainer) GetAll(beanType interface{}) ([]interface{}, error) <span class="cov0" title="0">{
+        return nil, errors.New("not implemented")
+}</span>
+
+func (m *MockContainer) Invoke(fn interface{}, opts ...InvokeOption) ([]interface{}, error) <span class="cov0" title="0">{
+        return nil, errors.New("not implemented")
+}</span>
+
+func (m *MockContainer) Has(beanID string) bool <span class="cov0" title="0">{
+        _, exists := m.beams[beanID]
+        return exists
+}</span>
+
+func (m *MockContainer) Remove(beanID string) error <span class="cov0" title="0">{
+        return errors.New("not implemented")
+}</span>
+
+func (m *MockContainer) Close() error <span class="cov0" title="0">{
+        return errors.New("not implemented")
+}</span>
+
+func (m *MockContainer) CreateBean(beanID string) (interface{}, error) <span class="cov0" title="0">{
+        return m.Get(beanID)
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
