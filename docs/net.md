@@ -61,11 +61,11 @@ func WithIdleTimeout(timeout time.Duration) ServerOption
 ### 使用示例
 
 ```go
-// 创建 Gin 服务器（由 gin 集成模块提供）
-server := gin.New(
-    gin.WithContainer(container),
-    gin.WithHost(":8080"),
-    gin.WithMode("release"),
+// 创建 HTTP 服务器
+server := net.NewServer(
+    net.WithContainer(container),
+    net.WithHost(":8080"),
+    net.WithPort(8080),
 )
 
 // 注册中间件

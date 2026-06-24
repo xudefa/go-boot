@@ -1,6 +1,6 @@
 // Package health 提供健康检查的核心接口和聚合器。
 //
-// Indicator 接口由各集成模块实现（如数据库、Redis 连接检查），
+// Indicator 接口由各组件实现（如数据库、Redis 连接检查），
 // Aggregator 聚合所有指标的健康状态，支持组合判断。
 // 健康状态枚举：StatusUp > StatusDegraded > StatusDown > StatusOutage > StatusUnknown。
 //
@@ -86,7 +86,7 @@ type Health struct {
 
 // Indicator 健康指标接口
 //
-// 各集成模块实现此接口提供组件健康状态。
+// 各组件实现此接口提供组件健康状态。
 // 例如：数据库连接检查、Redis 连通性检查。
 type Indicator interface {
 	Name() string

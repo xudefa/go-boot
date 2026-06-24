@@ -4,8 +4,8 @@
 
 `boot` 包是 go-boot 框架的应用启动核心，参考 Spring Boot 的 `SpringApplication` 设计，提供了应用启动的全生命周期管理，包括：
 
-- **自动配置**（AutoConfiguration）：各集成模块通过 `RegisterAutoConfig` 注册自动配置
-- **启动器管理**（Starter）：管理集成模块的启动和停止生命周期
+- **自动配置**（AutoConfiguration）：各模块通过 `RegisterAutoConfig` 注册自动配置
+- **启动器管理**（Starter）：管理组件的启动和停止生命周期
 - **横幅打印**（Banner）：应用启动时显示 ASCII 艺术横幅
 - **失败分析**（FailureAnalyzer）：启动失败时提供友好的错误提示
 
@@ -194,7 +194,7 @@ type AutoConfiguration interface {
 }
 ```
 
-各集成模块实现此接口，通过 `RegisterAutoConfig` 注册。
+各模块实现此接口，通过 `RegisterAutoConfig` 注册。
 
 ### 注册自动配置
 

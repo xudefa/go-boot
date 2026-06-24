@@ -147,8 +147,7 @@ func TestContainer_GetT_NotFound_ReturnsError(t *testing.T)
 
 ### 覆盖率目标
 
-- 核心模块：80%+
-- 集成模块：70%+
+- 核心框架：80%+
 
 ### 运行特定测试
 
@@ -168,7 +167,7 @@ go tool cover -html=coverage.out
 
 ### 零外部依赖
 
-核心框架不引入任何外部依赖，仅使用 Go 标准库。集成模块通过独立仓库提供第三方库支持。
+核心框架不引入任何外部依赖，仅使用 Go 标准库。
 
 ### 接口优先
 

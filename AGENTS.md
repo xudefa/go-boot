@@ -1,6 +1,6 @@
 # go-boot 项目开发规范文档
 
-go-boot 是一个参考 Spring Boot 设计哲学、同时保留 Go 语言特性的工程化框架。核心框架零外部依赖，仅使用 Go 标准库。集成模块以独立仓库形式提供（如 go-boot-gin, go-boot-gorm 等）。
+go-boot 是一个参考 Spring Boot 设计哲学、同时保留 Go 语言特性的工程化框架。核心框架零外部依赖，仅使用 Go 标准库。
 
 ## 1. 项目架构
 
@@ -24,7 +24,6 @@ go-boot 是一个参考 Spring Boot 设计哲学、同时保留 Go 语言特性�
 ```
 
 - **核心框架**：零外部依赖，仅使用 Go 标准库
-- **集成模块**：独立 GitHub 仓库（`go-boot-gin`、`go-boot-gorm`、`go-boot-redis` 等）
 - **示例代码**：统一放在 `examples/` 目录，仅演示核心模块用法
 - **文档**：详细设计文档位于 `docs/` 目录
 
@@ -47,15 +46,20 @@ go-boot 是一个参考 Spring Boot 设计哲学、同时保留 Go 语言特性�
 | `net/` | HTTP 服务器/客户端抽象接口 | `net.Server`, `net.HttpClient` |
 | `health/` | 健康指标（Indicator + Aggregator） | `health.Indicator`, `health.HealthAggregator` |
 | `metrics/` | 指标收集（Counter + Gauge + Registry） | `metrics.Counter`, `metrics.Gauge`, `metrics.MeterRegistry` |
-| `tracing/` | 分布式追踪抽象 + LocalTracer 实现 | `tracing.Tracer`, `tracing.Span` |
 | `actuator/` | 运维端点（健康、指标、环境信息） | `actuator.Endpoint` |
 | `schedule/` | 定时任务调度（Cron 解析、最小堆调度器、@Scheduled 注解） | `schedule.Task`, `schedule.Scheduler` |
 | `center/` | 注册中心抽象（Registry 接口 + Selector 接口 + 内置选择器） | `center.Registry`, `center.Selector` |
+| `circuit/` | 熔断器实现（防止级联故障） | `circuit.Breaker` |
+| `loadbalancer/` | 负载均衡器（多种策略实现） | `loadbalancer.Balancer` |
+| `validation/` | 数据验证（HTTP 请求验证 + 结构体验证） | `validation.RequestValidator` |
+| `security/` | 安全框架（认证、授权、过滤器链） | `security.Filter`, `security.Authentication` |
+| `exception/` | 异常处理（错误码、处理器、中间件） | `exception.Handler`, `exception.Resolver` |
 | `refresh/` | 配置刷新（RefreshScope 动态刷新） | `refresh.RefreshScopeManager` |
+| `constants/` | 常量定义（配置键、条件值） | — |
 
 ### 1.3 接口抽象原则
 
-所有集成层通过核心框架中的接口抽象定义，实现运行时互换：
+核心框架通过接口抽象定义，实现运行时互换：
 
 - `net.Server` / `net.HttpClient` — HTTP 服务器/客户端
 - `data.Repository[T]` / `data.Transactor` — 数据访问/事务
@@ -64,7 +68,9 @@ go-boot 是一个参考 Spring Boot 设计哲学、同时保留 Go 语言特性�
 - `log.Logger` — 日志抽象
 - `health.Indicator` — 健康指标
 - `metrics.MeterRegistry` — 指标注册表
-- `tracing.Tracer` / `tracing.Span` — 分布式追踪
+- `circuit.Breaker` — 熔断器
+- `loadbalancer.Balancer` — 负载均衡器
+- `validation.RequestValidator` — 请求验证器
 - `center.Registry` / `center.Selector` — 注册发现/负载均衡
 - `core.Container` — IoC 容器
 - `boot.AutoConfiguration` — 自动配置
@@ -353,8 +359,8 @@ func TestCalculateDiscount(t *testing.T) {
 ```go
 func init() {
     boot.RegisterAutoConfig(
-        &TracingAutoConfiguration{},
-        condition.OnProperty("tracing.enabled", "true"),
+        &CircuitAutoConfiguration{},
+        condition.OnProperty("circuit.enabled", "true"),
     )
 }
 ```

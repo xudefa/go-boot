@@ -54,7 +54,7 @@ func NewStarterRegistry() *StarterRegistry {
 
 // RegisterStarter 注册启动器到全局注册表
 //
-// 在集成模块的 init() 中调用：
+// 在模块的 init() 中调用：
 //
 //	func init() {
 //	    boot.RegisterStarter(&MyStarter{})

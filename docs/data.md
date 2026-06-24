@@ -59,7 +59,7 @@ type User struct {
     Email string
 }
 
-// 获取 Repository 实例（由 ORM 集成模块提供）
+// 获取 Repository 实例（由 ORM 实现提供）
 var userRepo data.Repository[User]
 
 // 创建
@@ -99,7 +99,7 @@ type RepositoryFactory[T any] interface {
 }
 ```
 
-ORM 集成模块通过实现此接口来创建具体的 `Repository` 实例。
+ORM 实现通过实现此接口来创建具体的 `Repository` 实例。
 
 ---
 

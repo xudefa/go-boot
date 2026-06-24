@@ -2,13 +2,13 @@
 
 ## 一、概述
 
-go-boot 是一个参考 Spring Boot 设计哲学、保留 Go 语言特性的工程化应用框架。核心使用 Go 标准库实现（零外部依赖），提供依赖注入（IoC）、面向切面编程（AOP）、数据访问抽象、缓存抽象、日志抽象、配置管理、健康检查、指标收集、分布式追踪、服务注册发现、定时任务调度等开箱即用的能力。集成模块以独立 GitHub 仓库形式提供。
+go-boot 是一个参考 Spring Boot 设计哲学、保留 Go 语言特性的工程化应用框架。核心使用 Go 标准库实现（零外部依赖），提供依赖注入（IoC）、面向切面编程（AOP）、数据访问抽象、缓存抽象、日志抽象、配置管理、健康检查、指标收集、服务注册发现、熔断器、负载均衡、数据验证、定时任务调度等开箱即用的能力。
 
 ### 设计目标
 
 - **零依赖核心**：核心框架仅使用 Go 标准库，无任何第三方依赖
-- **插件化集成**：通过接口抽象实现第三方框架的无缝替换
-- **约定优于配置**：借鉴 Spring Boot 的自动配置机制
+- **接口抽象**：通过接口抽象实现组件的灵活替换
+- **约定优于配置**：提供合理的默认配置，减少样板代码
 - **生命周期管理**：统一的组件启动、运行、停止生命周期
 - **可测试性**：核心层不依赖外部服务，易于单元测试
 
@@ -16,9 +16,7 @@ go-boot 是一个参考 Spring Boot 设计哲学、保留 Go 语言特性的工�
 
 | 分类 | 说明 |
 |------|------|
-| 核心框架 | 19 个子包（core, aop, boot, context 等），零外部依赖 |
-| 集成模块 | 独立 GitHub 仓库（go-boot-gin, go-boot-gorm, go-boot-redis 等） |
-| 示例模块 | `examples/` 目录，仅演示核心模块用法 |
+| 核心框架 | 24 个子包（core, aop, boot, context, circuit, loadbalancer, validation 等），零外部依赖 |
 
 ---
 
@@ -50,26 +48,32 @@ go-boot 是一个参考 Spring Boot 设计哲学、保留 Go 语言特性的工�
 
 ```
 go-boot/
-├── core/        ← IoC 容器（依赖注入核心）
-├── aop/         ← AOP 框架（引用 core 的类型信息）
-├── data/        ← 数据访问抽象
-├── cache/       ← 缓存抽象
-├── config/      ← 配置管理接口
-├── log/         ← 日志抽象接口
-├── net/         ← HTTP 服务器/客户端抽象
-├── tracing/     ← 分布式追踪抽象 + OpenTelemetry 实现
-├── actuator/    ← 运维端点（健康、指标、环境信息）
-├── condition/   ← 条件判断（用于自动配置）
-├── environment/ ← 环境配置管理（多层 PropertySource）
-├── health/      ← 健康指标接口
-├── metrics/     ← 指标收集接口
-├── schedule/    ← 定时任务调度（Cron 解析、最小堆调度器、@Scheduled 注解）
-├── security/    ← 安全框架（认证、授权、上下文）
-├── event/       ← 事件驱动支持
-├── context/     ← 应用上下文（聚合容器、环境、生命周期、事件）
-├── life/        ← 生命周期阶段管理
-├── boot/        ← 启动器、自动配置注册、横幅、失败分析
-└── root pkg     ← Starter 接口（简单启动器/上下文启动器）
+├── core/           ← IoC 容器（依赖注入核心）
+├── aop/            ← AOP 框架（引用 core 的类型信息）
+├── data/           ← 数据访问抽象
+├── cache/          ← 缓存抽象
+├── config/         ← 配置管理接口
+├── log/            ← 日志抽象接口
+├── net/            ← HTTP 服务器/客户端抽象
+├── circuit/        ← 熔断器（防止级联故障）
+├── loadbalancer/   ← 负载均衡器（多种策略）
+├── validation/     ← 数据验证（HTTP 请求验证）
+├── security/       ← 安全框架（认证、授权）
+├── actuator/       ← 运维端点（健康、指标、环境信息）
+├── condition/      ← 条件判断（用于自动配置）
+├── environment/    ← 环境配置管理（多层 PropertySource）
+├── health/         ← 健康指标接口
+├── metrics/        ← 指标收集接口
+├── schedule/       ← 定时任务调度（Cron 解析、最小堆调度器、@Scheduled 注解）
+├── center/         ← 注册中心抽象（服务注册发现）
+├── event/          ← 事件驱动支持
+├── exception/      ← 异常处理
+├── refresh/        ← 配置热刷新
+├── context/        ← 应用上下文（聚合容器、环境、生命周期、事件）
+├── life/           ← 生命周期阶段管理
+├── boot/           ← 启动器、自动配置注册、横幅、失败分析
+├── constants/      ← 常量定义
+└── root pkg        ← Starter 接口（简单启动器/上下文启动器）
 ```
 
 ---
@@ -185,7 +189,7 @@ boot.NewApplication(
 
 参考 Spring Boot 的 `@Configuration + @Bean` 模式：
 
-1. **AutoConfiguration 接口**：每个集成模块实现 `Configure(ctx ApplicationContext)` 方法
+1. **AutoConfiguration 接口**：每个模块实现 `Configure(ctx ApplicationContext)` 方法
 2. **AutoConfigRegistry**：全局注册表，所有自动配置通过 `init()` 函数注册
 3. **条件评估**：支持 `condition.OnProperty()`、`condition.OnBean()` 等条件控制
 4. **排序与依赖**：支持 `WithOrder()` 和 `WithDependsOn()` 控制执行顺序
@@ -352,10 +356,6 @@ Name() + Health(ctx) Health，通过 Aggregator 聚合所有指标。
 
 Get、GetString、GetInt、GetBool、Unmarshal、Watch 等 20+ 方法。
 
-#### 追踪接口 (`tracing.Tracer` / `tracing.Span`)
-
-Start、CurrentSpan、Finish + Span（End、AddEvent、SetAttribute、RecordError、SetStatus 等）。
-
 #### 指标接口 (`metrics.MeterRegistry`)
 
 Counter/Gauge 创建和 Collect 收集。
@@ -368,63 +368,7 @@ Counter/Gauge 创建和 Collect 收集。
 
 ---
 
-## 四、集成模块（独立仓库）
-
-以下集成模块已从核心框架中拆分，以独立 GitHub 仓库形式提供。每个模块都实现了核心框架中定义的接口，可以无缝替换。
-
-| 模块 | 仓库 | 实现接口 |
-|------|------|----------|
-| Gin | `github.com/xudefa/go-boot-gin` | net.Server |
-| GORM | `github.com/xudefa/go-boot-gorm` | data.Transactor, data.Repository[T] |
-| Redis | `github.com/xudefa/go-boot-redis` | cache.Cache |
-| Viper | `github.com/xudefa/go-boot-viper` | config.Config |
-| Zap | `github.com/xudefa/go-boot-zap` | log.Logger |
-| Zerolog | `github.com/xudefa/go-boot-zerolog` | log.Logger |
-| Etcd | `github.com/xudefa/go-boot-etcd` | center.Registry |
-| Nacos | `github.com/xudefa/go-boot-nacos` | center.Registry |
-| Consul | `github.com/xudefa/go-boot-consul` | center.Registry |
-| gRPC | `github.com/xudefa/go-boot-grpc` | — |
-| Hertz | `github.com/xudefa/go-boot-hertz` | net.Server, net.HttpClient |
-| Fasthttp | `github.com/xudefa/go-boot-fasthttp` | net.HttpClient |
-| WebSocket | `github.com/xudefa/go-boot-websocket` | net.WebSocketServer |
-| JWT | `github.com/xudefa/go-boot-jwt` | — |
-| Casbin | `github.com/xudefa/go-boot-casbin` | — |
-| Email | `github.com/xudefa/go-boot-email` | — |
-| Swagger | `github.com/xudefa/go-boot-swagger` | — |
-| XORM | `github.com/xudefa/go-boot-xorm` | data.Transactor |
-| Kitex | `github.com/xudefa/go-boot-kitex` | — |
-| OpenTelemetry | `github.com/xudefa/go-boot-opentelemetry` | tracing.Tracer |
-
-### 使用方式
-
-集成模块通过 `go get` 安装：
-
-```bash
-go get github.com/xudefa/go-boot-gin@latest
-go get github.com/xudefa/go-boot-gorm@latest
-```
-
-每个集成模块都实现了核心框架中定义的接口，可以无缝替换：
-
-```go
-// 使用 Gin 实现 net.Server 接口
-import "github.com/xudefa/go-boot-gin"
-
-server := gin.New(
-    gin.WithContainer(app.Container()),
-    gin.WithHost(":8080"),
-)
-
-// 使用 GORM 实现 data.Repository[T] 接口
-import "github.com/xudefa/go-boot-gorm"
-
-db, _ := gorm.OpenMySQL(gorm.WithDSN("user:pass@tcp(localhost:3306)/db"))
-repo := gorm.NewRepository[User](db.DB)
-```
-
----
-
-## 五、详细文档索引
+## 四、核心模块文档索引
 
 ### 核心子包文档
 
@@ -447,45 +391,22 @@ repo := gorm.NewRepository[User](db.DB)
 | net/ | [docs/net.md](net.md) | HTTP 服务器/客户端抽象接口 |
 | health/ | [docs/health.md](health.md) | 健康指标（Indicator + Aggregator） |
 | metrics/ | [docs/metrics.md](metrics.md) | 指标收集（Counter + Gauge + Registry） |
-| tracing/ | [docs/tracing.md](tracing.md) | 分布式追踪抽象 + OpenTelemetry 实现 |
 | actuator/ | [docs/actuator.md](actuator.md) | 运维端点（健康、指标、环境信息） |
 | schedule/ | [docs/schedule.md](schedule.md) | 定时任务调度（Cron 解析 + 最小堆调度器 + @Scheduled） |
 | security/ | [docs/secure.md](secure.md) | 安全框架（认证、授权、上下文） |
 | center/ | [docs/center.md](center.md) | 注册中心抽象（Registry + Selector + 内置选择器） |
+| circuit/ | [docs/circuit.md](circuit.md) | 熔断器（防止级联故障） |
+| loadbalancer/ | [docs/loadbalancer.md](loadbalancer.md) | 负载均衡器（多种策略实现） |
+| validation/ | [docs/validation.md](validation.md) | 数据验证（HTTP 请求验证 + 结构体验证） |
 | https/ | [docs/https.md](https.md) | HTTPS 客户端 + AES/RSA 加解密 + TLS 配置 |
-
-### 集成模块文档
-
-各集成模块的文档请参考其独立仓库的 README：
-
-| 模块 | 仓库 |
-|------|------|
-| Gin | [go-boot-gin](https://github.com/xudefa/go-boot-gin) |
-| GORM | [go-boot-gorm](https://github.com/xudefa/go-boot-gorm) |
-| Redis | [go-boot-redis](https://github.com/xudefa/go-boot-redis) |
-| Viper | [go-boot-viper](https://github.com/xudefa/go-boot-viper) |
-| Zap | [go-boot-zap](https://github.com/xudefa/go-boot-zap) |
-| Etcd | [go-boot-etcd](https://github.com/xudefa/go-boot-etcd) |
-| Nacos | [go-boot-nacos](https://github.com/xudefa/go-boot-nacos) |
-| gRPC | [go-boot-grpc](https://github.com/xudefa/go-boot-grpc) |
 
 ---
 
-## 六、编码规范
+## 五、编码规范
 
 ### 函数式选项模式
 
 整个框架优先使用函数式选项模式：
-
-```go
-server := gin.New(
-    gin.WithContainer(container),
-    gin.WithHost(":8080"),
-    gin.WithMode("release"),
-)
-```
-
-### IoC 构建器选项
 
 ```go
 container.Register("service",
@@ -514,63 +435,52 @@ type UserService struct {
 
 ---
 
-## 七、测试策略
+## 六、测试策略
 
 - **核心框架**：单元测试，不依赖外部服务，使用表驱动测试
-- **集成模块**：各独立仓库自行维护测试，使用 mock 或 testcontainers
 - **并行测试**：使用 `t.Parallel()`
 - **命名规范**：`TestFunctionName_Condition_ExpectedBehavior`
 
 ---
 
-## 八、核心包引用关系
+## 七、核心包引用关系
 
 ```
 go-boot/ (零外部依赖)
-  ├── core/        ← 基础类型，被所有包引用
-  ├── aop/         → core (reflect.Type)
-  ├── net/         → core (Container 接口)
-  ├── condition/   ← 独立，仅引用标准库
-  ├── event/       ← 独立
-  ├── life/        ← 独立
-  ├── health/      ← 独立
-  ├── metrics/     ← 独立
-  ├── center/      ← 纯接口，无内部依赖
-  ├── context/     → core, environment, event, life
-  ├── boot/        → context, core, environment, condition
-  ├── data/        ← 纯接口，无内部依赖
-  ├── actuator/    → context, health, metrics, boot
-  ├── schedule/    → core, boot, condition
-  └── tracing/     ← 纯内部引用（接口+实现在同一包）
-```
-
-集成模块通过 `go get` 安装，依赖核心框架中定义的接口：
-
-```
-go-boot-gin     → go-boot/core, go-boot/net
-go-boot-gorm    → go-boot/data, go-boot/core
-go-boot-redis   → go-boot/cache
-go-boot-viper   → go-boot/config
-go-boot-zap     → go-boot/log
-go-boot-etcd    → go-boot/center
+  ├── core/           ← 基础类型，被所有包引用
+  ├── aop/            → core (reflect.Type)
+  ├── net/            → core (Container 接口)
+  ├── condition/      ← 独立，仅引用标准库
+  ├── event/          ← 独立
+  ├── life/           ← 独立
+  ├── health/         ← 独立
+  ├── metrics/        ← 独立
+  ├── circuit/        ← 独立，仅引用标准库
+  ├── loadbalancer/   ← 独立，仅引用标准库
+  ├── validation/     ← 独立，仅引用标准库
+  ├── center/         ← 纯接口，无内部依赖
+  ├── context/        → core, environment, event, life
+  ├── boot/           → context, core, environment, condition
+  ├── data/           ← 纯接口，无内部依赖
+  ├── actuator/       → context, health, metrics, boot
+  ├── schedule/       → core, boot, condition
+  ├── security/       → core, boot, condition
+  ├── exception/      → core, log
+  └── refresh/        → core, context, event
 ```
 
 ---
 
-## 九、关键设计决策
+## 八、关键设计决策
 
 ### 为什么核心零外部依赖？
 
-确保框架核心的稳定性和可移植性，用户无需引入不必要的传递依赖。第三方集成通过独立的仓库实现，按需引入。
-
-### 为什么集成模块独立仓库？
-
-每个集成模块有独立的版本控制和发布周期，用户可以单独升级某个集成模块而不影响核心框架。独立仓库也便于社区贡献和维护。
+确保框架核心的稳定性和可移植性，用户无需引入不必要的传递依赖。所有功能通过接口抽象实现，便于扩展和替换。
 
 ### 为什么优先函数式选项模式？
 
 相比建造者模式，函数式选项更符合 Go 语言的函数式编程风格，语义清晰，易于扩展（新增选项只需添加一个函数，无需修改接口）。
 
-### 为什么支持 Spring Boot 风格的自动配置？
+### 为什么支持自动配置机制？
 
 降低框架使用门槛，让开发者专注于业务逻辑而非组件组装。通过注册表 + 条件判断实现灵活控制。

@@ -1,8 +1,8 @@
 // Package boot 提供应用启动器、自动配置注册、横幅打印和失败分析功能。
 //
 // 核心机制：
-//   - AutoConfiguration: 各集成模块通过 RegisterAutoConfig 注册自动配置
-//   - Starter: 启动器管理集成模块的启动和停止生命周期
+//   - AutoConfiguration: 各模块通过 RegisterAutoConfig 注册自动配置
+//   - Starter: 启动器管理组件的启动和停止生命周期
 //   - Banner: 启动横幅显示
 //   - FailureAnalyzer: 启动失败时的友好错误提示
 //
@@ -39,7 +39,7 @@ type ApplicationContext interface {
 // AutoConfiguration 自动配置接口
 //
 // 参考 Spring Boot 的 @Configuration + @Bean 模式。
-// 每个集成模块实现此接口，通过 RegisterAutoConfig 注册。
+// 每个模块实现此接口，通过 RegisterAutoConfig 注册。
 type AutoConfiguration interface {
 	Configure(ctx ApplicationContext) error
 }
@@ -91,11 +91,11 @@ func NewAutoConfigRegistry() *AutoConfigRegistry {
 
 // RegisterAutoConfig 注册自动配置到全局注册表
 //
-// 在集成模块的 init() 中调用：
+// 在模块的 init() 中调用：
 //
 //	func init() {
-//	    boot.RegisterAutoConfig(&GinAutoConfiguration{},
-//	        condition.OnProperty("gin.enabled", "true"),
+//	    boot.RegisterAutoConfig(&CircuitAutoConfiguration{},
+//	        condition.OnProperty("circuit.enabled", "true"),
 //	    )
 //	}
 func RegisterAutoConfig(config AutoConfiguration, conditions ...condition.Condition) {

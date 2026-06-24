@@ -1,6 +1,6 @@
 // Package config 定义配置中心的核心接口和模型。
 //
-// ConfigCenter 接口由各集成模块（如 Nacos、Etcd、Consul）实现，
+// ConfigCenter 接口由配置中心实现（如 Nacos、Etcd、Consul），
 // 提供远程配置的加载、监听和关闭能力。
 // ConfigCenterConfig 统一描述配置中心的连接参数。
 package config

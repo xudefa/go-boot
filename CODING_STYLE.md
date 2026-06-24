@@ -55,7 +55,9 @@ go-boot/
 ├── net/            # 网络接口抽象
 ├── health/         # 健康检查
 ├── metrics/        # 指标收集
-├── tracing/        # 分布式追踪
+├── circuit/        # 熔断器
+├── loadbalancer/   # 负载均衡
+├── validation/     # 数据验证
 ├── actuator/       # 运维端点
 └── schedule/       # 定时任务
 ```

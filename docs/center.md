@@ -59,7 +59,7 @@ type Registry interface {
 ### 使用示例
 
 ```go
-var reg center.Registry // 具体实现由集成模块提供（如 etcd、consul）
+var reg center.Registry // 具体实现由注册中心提供（如 etcd、consul、nacos）
 
 // 注册实例
 err := reg.Register(ctx, center.InstanceInfo{

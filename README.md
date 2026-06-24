@@ -2,9 +2,9 @@
 
 [![Go Version](https://img.shields.io/github/go-mod/go-version/xudefa/go-boot)](https://go.dev/) [![License](https://img.shields.io/github/license/xudefa/go-boot)](./LICENSE) [![Build Status](https://img.shields.io/github/actions/workflow/status/xudefa/go-boot/test.yml?branch=master)](https://github.com/xudefa/go-boot/actions) [![Go Reference](https://pkg.go.dev/badge/github.com/xudefa/go-boot.svg)](https://pkg.go.dev/github.com/xudefa/go-boot) [![Go Report Card](https://goreportcard.com/badge/github.com/xudefa/go-boot)](https://goreportcard.com/report/github.com/xudefa/go-boot)
 
-Go 语言轻量级应用开发框架 — 提供依赖注入（IoC）、面向切面编程（AOP）、数据访问层抽象及常用中间件集成，帮助开发者快速构建可测试、松耦合的 Go 应用程序。
+Go 语言轻量级应用开发框架 — 提供依赖注入（IoC）、面向切面编程（AOP）、数据访问层抽象、熔断器、负载均衡、数据验证等能力，帮助开发者快速构建可测试、松耦合的 Go 应用程序。
 
-> 设计理念：零外部依赖的核心框架 + 可插拔的集成模块，借鉴 Spring Boot 的设计思想，为 Go 开发者提供熟悉的开发体验。
+> 设计理念：零外部依赖的核心框架，借鉴 Spring Boot 的设计思想，为 Go 开发者提供熟悉的开发体验。
 
 ## 整体架构
 
@@ -237,57 +237,21 @@ func main() {
 | net | [net/](net/) | HTTP 入口：服务器/客户端统一接口 |
 | health | [health/](health/) | 健康指标：Indicator、Aggregator |
 | metrics | [metrics/](metrics/) | 指标收集：Counter、Gauge、Registry |
-| tracing | [tracing/](tracing/) | 分布式追踪：Tracer、Span 抽象 |
 | actuator | [actuator/](actuator/) | 运维端点：健康检查、指标、环境信息 |
 | schedule | [schedule/](schedule/) | 定时任务调度：Cron 解析、最小堆调度器 |
 | center | [center/](center/) | 注册中心抽象：服务注册发现、客户端负载均衡 |
-
-## 集成模块
-
-go-boot 核心框架零外部依赖。以下集成模块提供对常用第三方库的支持，每个模块都是独立的 GitHub 仓库：
-
-| 模块 | 仓库 | 说明 |
-|------|------|------|
-| Gin | [go-boot-gin](https://github.com/xudefa/go-boot-gin) | Gin HTTP 框架集成 |
-| Hertz | [go-boot-hertz](https://github.com/xudefa/go-boot-hertz) | CloudWeGo Hertz 集成 |
-| FastHTTP | [go-boot-fasthttp](https://github.com/xudefa/go-boot-fasthttp) | 高性能 HTTP 客户端 |
-| gRPC | [go-boot-grpc](https://github.com/xudefa/go-boot-grpc) | gRPC 框架集成 |
-| Kitex | [go-boot-kitex](https://github.com/xudefa/go-boot-kitex) | CloudWeGo Kitex RPC |
-| GORM | [go-boot-gorm](https://github.com/xudefa/go-boot-gorm) | GORM ORM 集成 |
-| XORM | [go-boot-xorm](https://github.com/xudefa/go-boot-xorm) | XORM ORM 集成 |
-| Redis | [go-boot-redis](https://github.com/xudefa/go-boot-redis) | Redis 缓存集成 |
-| Viper | [go-boot-viper](https://github.com/xudefa/go-boot-viper) | Viper 配置集成 |
-| Zap | [go-boot-zap](https://github.com/xudefa/go-boot-zap) | Uber Zap 日志集成 |
-| Zerolog | [go-boot-zerolog](https://github.com/xudefa/go-boot-zerolog) | RS Zerolog 日志集成 |
-| Etcd | [go-boot-etcd](https://github.com/xudefa/go-boot-etcd) | Etcd 注册中心集成 |
-| Nacos | [go-boot-nacos](https://github.com/xudefa/go-boot-nacos) | Nacos 注册中心集成 |
-| Consul | [go-boot-consul](https://github.com/xudefa/go-boot-consul) | Consul 注册中心集成 |
-| Casbin | [go-boot-casbin](https://github.com/xudefa/go-boot-casbin) | Casbin 权限控制 |
-| JWT | [go-boot-jwt](https://github.com/xudefa/go-boot-jwt) | JWT 认证集成 |
-| WebSocket | [go-boot-websocket](https://github.com/xudefa/go-boot-websocket) | WebSocket 支持 |
-| Swagger | [go-boot-swagger](https://github.com/xudefa/go-boot-swagger) | API 文档生成 |
-| Prometheus | [go-boot-prometheus](https://github.com/xudefa/go-boot-prometheus) | Prometheus 指标集成 |
-| OpenTelemetry | [go-boot-opentelemetry](https://github.com/xudefa/go-boot-opentelemetry) | 分布式追踪集成 |
-| Email | [go-boot-email](https://github.com/xudefa/go-boot-email) | 邮件发送集成 |
-| Validation | [go-boot-validation](https://github.com/xudefa/go-boot-validation) | 参数验证集成 |
-
-### 使用集成模块
-
-```bash
-# 安装核心框架
-go get github.com/xudefa/go-boot@v1.0.0
-
-# 按需安装集成模块
-go get github.com/xudefa/go-boot-gin@v1.0.0
-go get github.com/xudefa/go-boot-redis@v1.0.0
-go get github.com/xudefa/go-boot-gorm@v1.0.0
-```
+| circuit | [circuit/](circuit/) | 熔断器：防止级联故障 |
+| loadbalancer | [loadbalancer/](loadbalancer/) | 负载均衡器：多种策略实现 |
+| validation | [validation/](validation/) | 数据验证：HTTP 请求验证 + 结构体验证 |
+| security | [security/](security/) | 安全框架：认证、授权、过滤器链 |
+| exception | [exception/](exception/) | 异常处理：错误码、处理器、中间件 |
+| refresh | [refresh/](refresh/) | 配置热刷新：Scope、代理、事件 |
 
 ## 接口定义
 
 ### `net.Server`
 
-HTTP 服务器统一接口（由 go-boot-gin、go-boot-hertz 实现）：
+HTTP 服务器统一接口：
 
 - `Starter() error` — 启动服务器，支持优雅关闭
 - `Use(m any) Server` — 添加路由级中间件
@@ -296,7 +260,7 @@ HTTP 服务器统一接口（由 go-boot-gin、go-boot-hertz 实现）：
 
 ### `net.HttpClient`
 
-HTTP 客户端统一接口（由 go-boot-hertz、go-boot-fasthttp 实现）：
+HTTP 客户端统一接口：
 
 - `Get / Post / Put / Delete / Do` — RESTful 请求方法
 - `Close() error` — 关闭客户端
@@ -305,7 +269,7 @@ HTTP 客户端统一接口（由 go-boot-hertz、go-boot-fasthttp 实现）：
 
 ### `data.Repository[T]`
 
-泛型 CRUD 接口（由 go-boot-gorm 实现）：
+泛型 CRUD 接口：
 
 | 方法 | 说明 |
 |------|------|
@@ -355,6 +319,42 @@ type Indicator interface {
 ### `config.Config`
 
 提供 Get、GetString、GetInt、GetBool、Unmarshal、Watch 等 20+ 配置访问方法。
+
+### `circuit.Breaker`
+
+熔断器接口：
+
+```go
+type Breaker interface {
+    Allow() error         // 检查是否允许请求通过
+    RecordSuccess()       // 记录成功请求
+    RecordFailure()       // 记录失败请求
+    State() State         // 获取当前状态
+}
+```
+
+### `loadbalancer.Balancer`
+
+负载均衡器接口：
+
+```go
+type Balancer interface {
+    Next(backends []*ServiceInstance) (*ServiceInstance, error)
+}
+```
+
+### `validation.RequestValidator`
+
+请求验证器：
+
+```go
+type RequestValidator struct {
+    // 验证配置
+}
+
+func NewRequestValidator(config ValidationConfig) (*RequestValidator, error)
+func (v *RequestValidator) Validate(req *http.Request) *RuleValidationResult
+```
 
 ## 应用启动器
 
@@ -406,7 +406,10 @@ go-boot/                    # 核心框架（零外部依赖）
 ├── net/                    # HTTP 入口接口
 ├── health/                 # 健康指标
 ├── metrics/                # 指标收集
-├── tracing/                # 分布式追踪
+├── circuit/                # 熔断器
+├── loadbalancer/           # 负载均衡器
+├── validation/             # 数据验证
+├── security/               # 安全框架
 ├── actuator/               # 运维端点
 ├── schedule/               # 定时任务调度
 ├── center/                 # 注册中心抽象
